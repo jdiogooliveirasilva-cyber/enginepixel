@@ -4235,13 +4235,13 @@ function getSpriteTightBounds(img){
 }
 </script>
 <script>
-/* PixelEngine2D v6.2.7 — Lobby Multiplayer (auto-inject) */
+/* PixelEngine2D v6.2.7 — Lobby + Status (v2) */
 (function(){
-  if(window._PE_LOBBY_LOADED) return; // guard: não rodar duas vezes
+  if(window._PE_LOBBY_LOADED) return;
   window._PE_LOBBY_LOADED = true;
 
-  /* ── 1. URL do servidor ──────────────────────────────────────────── */
-  var _isExport = !!window._PE_SERVER_BAKED; // foi exportado com URL já embutida?
+  /* ── 1. URL do servidor ── */
+  var _isExport = !!window._PE_SERVER_BAKED;
   var _proto  = location.protocol === 'https:' ? 'wss:' : 'ws:';
   var _hproto = location.protocol;
   var _host   = location.host;
@@ -4254,48 +4254,117 @@ function getSpriteTightBounds(img){
     || localStorage.getItem('_pe_server_http')
     || (_hproto + '//' + _host);
 
-  /* ── 2. Patch Engine.Net.connect ────────────────────────────────── */
-  var _oc = Engine.Net.connect.bind(Engine.Net);
+  console.log('[PixelNet] Iniciando. Servidor:', window.PIXEL_SERVER);
+
+  /* ── 2. Badge de status visível ── */
+  function _makeBadge(){
+    var b = document.getElementById('_pe_badge');
+    if(b) return b;
+    b = document.createElement('div');
+    b.id = '_pe_badge';
+    b.style.cssText = [
+      'position:fixed;bottom:8px;left:8px;z-index:2147483646;',
+      'background:rgba(0,0,0,.75);border-radius:20px;padding:4px 10px 4px 6px;',
+      'font:12px/20px system-ui,sans-serif;color:#fff;display:flex;',
+      'align-items:center;gap:5px;pointer-events:none;transition:opacity .3s'
+    ].join('');
+    b.innerHTML = '<span id="_pe_dot" style="font-size:10px">🔴</span><span id="_pe_txt">Desconectado</span>';
+    document.body.appendChild(b);
+    return b;
+  }
+
+  function _setBadge(dot, txt, color){
+    try{
+      var d=document.getElementById('_pe_dot'), t=document.getElementById('_pe_txt');
+      if(d) d.textContent = dot;
+      if(t){ t.textContent = txt; t.style.color = color||'#fff'; }
+    }catch(e){}
+  }
+
+  /* ── 3. Patch Engine.Net.connect ── */
+  var _origConnect = Engine.Net.connect.bind(Engine.Net);
+
   Engine.Net.connect = function(url){
-    _oc((!url || url==='auto') ? window.PIXEL_SERVER : url);
+    var target = (!url || url === 'auto') ? window.PIXEL_SERVER : url;
+    // Atualiza PIXEL_SERVER se uma URL específica foi passada
+    if(url && url !== 'auto') {
+      window.PIXEL_SERVER = target;
+      var hp = target.replace('wss://','https://').replace('ws://','http://').replace(/\/api\/net$/,'');
+      window.PIXEL_HTTP = hp;
+    }
+    console.log('[PixelNet] Conectando em:', target);
+    _setBadge('🟡', 'Conectando...', '#ffd700');
+    _origConnect(target);
   };
   window.network.connect = Engine.Net.connect;
 
-  /* ── 3. Auto-conecta ────────────────────────────────────────────── */
+  /* ── 4. Ouvir eventos de conexão ── */
+  Engine.Net.on('connect', function(){
+    console.log('[PixelNet] ✅ Conectado!');
+    _setBadge('🟢', 'Conectado', '#7fff7f');
+    setTimeout(function(){ _makeBadge().style.opacity='0.4'; }, 3000);
+  });
+
+  Engine.Net.on('disconnect', function(){
+    console.log('[PixelNet] ❌ Desconectado. Reconectando...');
+    _setBadge('🔴', 'Reconectando...', '#ff7777');
+    _makeBadge().style.opacity='1';
+  });
+
+  Engine.Net.on('join', function(info){
+    console.log('[PixelNet] 🎮 Entrou na sala:', info.room, '| jogadores:', Object.keys(info.players).length);
+    _setBadge('🟢', 'Sala: ' + info.room, '#7fff7f');
+  });
+
+  Engine.Net.on('error', function(e){
+    console.warn('[PixelNet] ⚠️ Erro WebSocket:', e);
+    _setBadge('🔴', 'Erro de conexão', '#ff7777');
+  });
+
+  /* ── 5. Auto-conecta ── */
+  document.addEventListener('DOMContentLoaded', function(){
+    _makeBadge();
+  });
+  if(document.body) _makeBadge();
+
   Engine.Net.connect();
 
-  /* ── 4. Lobby UI ────────────────────────────────────────────────── */
+  /* ── 6. Lobby UI ── */
   var _lobbyJoinCb = null;
   var _lobbyTimer  = null;
 
   var CSS = [
-    '#_pe_ov{position:fixed;inset:0;background:rgba(0,0,0,.88);display:flex;',
+    '#_pe_ov{position:fixed;inset:0;background:rgba(0,0,0,.9);display:flex;',
     'align-items:center;justify-content:center;z-index:2147483647;',
     'font-family:system-ui,sans-serif;color:#fff}',
     '#_pe_box{background:#13131f;border-radius:18px;padding:26px 24px;',
-    'width:92%;max-width:370px;max-height:88vh;display:flex;',
-    'flex-direction:column;gap:14px;box-shadow:0 24px 64px #0009;',
-    'border:1px solid #2a2a40}',
-    '#_pe_box h2{margin:0;font-size:19px;letter-spacing:.3px}',
+    'width:92%;max-width:370px;max-height:90vh;display:flex;',
+    'flex-direction:column;gap:14px;box-shadow:0 24px 64px #000a;',
+    'border:1px solid #2a2a40;overflow-y:auto}',
+    '#_pe_box h2{margin:0;font-size:19px}',
     '#_pe_name,#_pe_srv{width:100%;padding:10px 13px;border-radius:9px;',
     'border:1px solid #333;background:#1e1e30;color:#fff;font-size:15px;',
-    'box-sizing:border-box}',
-    '#_pe_rooms{overflow-y:auto;max-height:180px;display:flex;flex-direction:column;gap:6px}',
+    'box-sizing:border-box;outline:none}',
+    '#_pe_name:focus,#_pe_srv:focus{border-color:#5555ee}',
+    '#_pe_rooms{display:flex;flex-direction:column;gap:6px;max-height:200px;overflow-y:auto}',
     '.pe-room{display:flex;justify-content:space-between;align-items:center;',
-    'padding:11px 14px;background:#1e1e30;border-radius:10px;cursor:pointer;',
-    'border:1px solid #2e2e48;transition:background .15s}',
-    '.pe-room:hover{background:#2a2a48}',
-    '.pe-room span{font-size:13px;color:#888}',
+    'padding:12px 14px;background:#1e1e30;border-radius:10px;cursor:pointer;',
+    'border:1px solid #2e2e48;transition:all .15s;user-select:none}',
+    '.pe-room:hover,.pe-room:active{background:#2a2a58;border-color:#5555ee}',
+    '#_pe_status_line{font-size:12px;padding:6px 10px;border-radius:8px;',
+    'background:#1a1a2e;text-align:center}',
     '#_pe_btns{display:flex;gap:8px}',
     '#_pe_btn_create{flex:1;padding:13px;background:#5555ee;border:none;',
-    'border-radius:10px;color:#fff;font-size:14px;font-weight:700;cursor:pointer}',
-    '#_pe_btn_close{padding:13px 16px;background:#2a2a3e;border:none;',
+    'border-radius:10px;color:#fff;font-size:15px;font-weight:700;cursor:pointer;',
+    'transition:background .15s}',
+    '#_pe_btn_create:hover{background:#6666ff}',
+    '#_pe_btn_close{padding:13px 16px;background:#222;border:1px solid #333;',
     'border-radius:10px;color:#aaa;font-size:14px;cursor:pointer}',
-    '#_pe_srv_row{display:flex;gap:7px;align-items:center}',
-    '#_pe_srv{flex:1;font-size:12px;padding:7px 10px;color:#888}',
-    '#_pe_btn_save{padding:7px 11px;background:#2a2a3e;border:none;',
+    '#_pe_srv_row{display:flex;gap:7px}',
+    '#_pe_srv{flex:1;font-size:12px;padding:7px 10px;color:#aaa}',
+    '#_pe_btn_save{padding:7px 12px;background:#222;border:1px solid #333;',
     'border-radius:8px;color:#aaa;font-size:12px;cursor:pointer;white-space:nowrap}',
-    '#_pe_empty{color:#666;text-align:center;padding:22px 0;font-size:14px}'
+    '#_pe_btn_save:hover{background:#333}'
   ].join('');
 
   function _injectCSS(){
@@ -4308,134 +4377,166 @@ function getSpriteTightBounds(img){
     var el=document.getElementById('_pe_ov');
     if(el) el.remove();
     if(_lobbyTimer){ clearInterval(_lobbyTimer); _lobbyTimer=null; }
-    _lobbyJoinCb=null;
+    _lobbyJoinCb = null;
   }
 
   async function _fetchRooms(){
     try{
-      var r=await fetch(window.PIXEL_HTTP+'/api/rooms');
-      if(!r.ok) return [];
+      var r = await fetch(window.PIXEL_HTTP + '/api/rooms', {cache:'no-store'});
+      if(!r.ok) return null;
       return await r.json();
-    }catch(e){ return []; }
+    }catch(e){ return null; }
+  }
+
+  function _setStatus(msg, color){
+    var el = document.getElementById('_pe_status_line');
+    if(!el) return;
+    el.textContent = msg;
+    el.style.color = color || '#aaa';
   }
 
   function _renderRooms(rooms){
-    var list=document.getElementById('_pe_rooms');
+    var list = document.getElementById('_pe_rooms');
     if(!list) return;
-    if(!rooms||!rooms.length){
-      list.innerHTML='<div id="_pe_empty">Nenhuma sala aberta. Crie a primeira!</div>';
+    if(rooms === null){
+      list.innerHTML = '<div style="color:#ff6666;text-align:center;padding:14px 0;font-size:13px">⚠️ Servidor offline ou dormindo. Aguarde...</div>';
+      _setStatus('Tentando acordar o servidor...', '#ffd700');
       return;
     }
-    list.innerHTML=rooms.map(function(rm){
-      var safe=rm.name.replace(/'/g,"\\'");
+    _setStatus(Engine.Net.connected ? '🟢 Conectado' : '🟡 Conectando...', Engine.Net.connected ? '#7fff7f' : '#ffd700');
+    if(!rooms.length){
+      list.innerHTML = '<div style="color:#888;text-align:center;padding:18px 0;font-size:14px">Nenhuma sala. Crie a primeira!</div>';
+      return;
+    }
+    list.innerHTML = rooms.map(function(rm){
+      var safe = rm.name.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
       return '<div class="pe-room" onclick="window._pe_join(\''+safe+'\')">'
         +'<b style="font-size:15px">🎮 '+rm.name+'</b>'
-        +'<span>'+rm.players+' jogador'+(rm.players!==1?'es':'')+'</span>'
+        +'<span style="font-size:13px;color:#888">'+rm.players+' jogador'+(rm.players!==1?'es':'')+'</span>'
         +'</div>';
     }).join('');
   }
 
-  window._pe_join=function(room){
-    var nm=(document.getElementById('_pe_name')||{}).value||'Player';
-    localStorage.setItem('_pe_pname',nm);
+  window._pe_join = function(room){
+    var nm = (document.getElementById('_pe_name')||{}).value || 'Player';
+    nm = nm.trim() || 'Player';
+    localStorage.setItem('_pe_pname', nm);
     _closeLobby();
-    if(_lobbyJoinCb) _lobbyJoinCb(room,nm);
+    if(_lobbyJoinCb) _lobbyJoinCb(room, nm);
   };
 
-  window._pe_create=function(){
-    var nm=(document.getElementById('_pe_name')||{}).value||'Player';
-    var room='sala_'+Math.random().toString(36).slice(2,7);
-    localStorage.setItem('_pe_pname',nm);
+  window._pe_create = function(){
+    var nm = (document.getElementById('_pe_name')||{}).value || 'Player';
+    nm = nm.trim() || 'Player';
+    var room = 'sala_' + Math.random().toString(36).slice(2,7);
+    localStorage.setItem('_pe_pname', nm);
     _closeLobby();
-    if(_lobbyJoinCb) _lobbyJoinCb(room,nm);
+    if(_lobbyJoinCb) _lobbyJoinCb(room, nm);
   };
 
-  window._pe_saveServer=function(){
-    var ws=(document.getElementById('_pe_srv')||{}).value||'';
-    if(!ws) return;
-    ws=ws.trim();
-    var hp=ws.replace('wss://','https://').replace('ws://','http://').replace(/\/api\/net$/,'');
-    window.PIXEL_SERVER=ws;
-    window.PIXEL_HTTP=hp;
-    localStorage.setItem('_pe_server_ws',ws);
-    localStorage.setItem('_pe_server_http',hp);
+  window._pe_saveServer = function(){
+    var inp = document.getElementById('_pe_srv');
+    if(!inp) return;
+    var ws = inp.value.trim();
+    if(!ws){ alert('URL inválida'); return; }
+    var hp = ws.replace('wss://','https://').replace('ws://','http://').replace(/\/api\/net$/,'');
+    window.PIXEL_SERVER = ws;
+    window.PIXEL_HTTP   = hp;
+    localStorage.setItem('_pe_server_ws',  ws);
+    localStorage.setItem('_pe_server_http', hp);
+    _patchExport();
     Engine.Net.disconnect();
     Engine.Net.connect(ws);
-    _patchExport();
-    alert('Servidor atualizado! Reconectando...');
-  };
-
-  window._pe_closeLobby=_closeLobby;
-
-  window.openLobby=function(opts){
-    var cb=(opts&&opts.onJoin)||function(room,name){ Engine.Net.join(room,name); };
-    _lobbyJoinCb=cb;
-    _injectCSS();
-    var saved=localStorage.getItem('_pe_pname')||'';
-    var html='<div id="_pe_ov">'
-      +'<div id="_pe_box">'
-      +'<div style="display:flex;justify-content:space-between;align-items:center">'
-      +'<h2>🌐 Lobby Online</h2>'
-      +'<button onclick="window._pe_closeLobby()" style="background:none;border:none;'
-      +'color:#888;font-size:22px;cursor:pointer;line-height:1">✕</button>'
-      +'</div>'
-      +'<div>'
-      +'<label style="font-size:12px;color:#888;display:block;margin-bottom:6px">Seu nome</label>'
-      +'<input id="_pe_name" value="'+saved+'" placeholder="Ex: Mario" maxlength="20">'
-      +'</div>'
-      +'<div>'
-      +'<div style="display:flex;justify-content:space-between;margin-bottom:8px">'
-      +'<label style="font-size:12px;color:#888">Salas abertas</label>'
-      +'<span onclick="window._pe_refresh()" style="font-size:12px;color:#7777ff;cursor:pointer">↻ Atualizar</span>'
-      +'</div>'
-      +'<div id="_pe_rooms"><div id="_pe_empty" style="color:#666;text-align:center;padding:22px 0">Carregando...</div></div>'
-      +'</div>'
-      +'<div id="_pe_btns">'
-      +'<button id="_pe_btn_create" onclick="window._pe_create()">+ Criar nova sala</button>'
-      +'<button id="_pe_btn_close" onclick="window._pe_closeLobby()">Cancelar</button>'
-      +'</div>'
-      +'<div>'
-      +'<label style="font-size:11px;color:#555;display:block;margin-bottom:5px">Servidor</label>'
-      +'<div id="_pe_srv_row">'
-      +'<input id="_pe_srv" value="'+window.PIXEL_SERVER+'">'
-      +'<button id="_pe_btn_save" onclick="window._pe_saveServer()">Salvar</button>'
-      +'</div>'
-      +'</div>'
-      +'</div></div>';
-    var tmp=document.createElement('div');
-    tmp.innerHTML=html;
-    document.body.appendChild(tmp.firstChild);
     window._pe_refresh();
-    _lobbyTimer=setInterval(window._pe_refresh,4000);
-    setTimeout(function(){ var n=document.getElementById('_pe_name'); if(n) n.focus(); },80);
   };
 
-  window._pe_refresh=async function(){
-    var rooms=await _fetchRooms();
+  window._pe_closeLobby = _closeLobby;
+
+  window.openLobby = function(opts){
+    var cb = (opts && opts.onJoin) || function(room, name){ Engine.Net.join(room, name); };
+    _lobbyJoinCb = cb;
+    _injectCSS();
+    var saved = localStorage.getItem('_pe_pname') || '';
+
+    var ov = document.createElement('div');
+    ov.id = '_pe_ov';
+    ov.innerHTML = [
+      '<div id="_pe_box">',
+        '<div style="display:flex;justify-content:space-between;align-items:center">',
+          '<h2>🌐 Lobby Online</h2>',
+          '<button onclick="window._pe_closeLobby()" style="background:none;border:none;',
+          'color:#888;font-size:24px;cursor:pointer;line-height:1;padding:0">✕</button>',
+        '</div>',
+        '<div>',
+          '<label style="font-size:12px;color:#888;display:block;margin-bottom:6px">Seu nome no jogo</label>',
+          '<input id="_pe_name" value="'+saved+'" placeholder="Ex: Mario" maxlength="24">',
+        '</div>',
+        '<div id="_pe_status_line">Verificando servidor...</div>',
+        '<div>',
+          '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">',
+            '<label style="font-size:12px;color:#888">Salas abertas</label>',
+            '<span onclick="window._pe_refresh()" style="font-size:12px;color:#6666ff;cursor:pointer">↻ Atualizar</span>',
+          '</div>',
+          '<div id="_pe_rooms"><div style="color:#888;text-align:center;padding:16px 0">Carregando...</div></div>',
+        '</div>',
+        '<div id="_pe_btns">',
+          '<button id="_pe_btn_create" onclick="window._pe_create()">+ Criar nova sala</button>',
+          '<button id="_pe_btn_close" onclick="window._pe_closeLobby()">Cancelar</button>',
+        '</div>',
+        '<details style="font-size:12px;color:#555;cursor:pointer">',
+          '<summary style="outline:none;list-style:none;color:#444">⚙ Servidor</summary>',
+          '<div style="margin-top:8px">',
+            '<div id="_pe_srv_row">',
+              '<input id="_pe_srv" value="'+window.PIXEL_SERVER+'" placeholder="wss://...">',
+              '<button id="_pe_btn_save" onclick="window._pe_saveServer()">Salvar</button>',
+            '</div>',
+            '<div style="color:#555;margin-top:4px;font-size:11px">',
+              'URL do seu servidor Render. Ex: wss://pixelengine-xxxx.onrender.com/api/net',
+            '</div>',
+          '</div>',
+        '</details>',
+      '</div>'
+    ].join('');
+    document.body.appendChild(ov);
+
+    window._pe_refresh();
+    _lobbyTimer = setInterval(window._pe_refresh, 3000);
+    setTimeout(function(){
+      var n = document.getElementById('_pe_name');
+      if(n && !n.value) n.focus();
+    }, 100);
+  };
+
+  window._pe_refresh = async function(){
+    var rooms = await _fetchRooms();
     _renderRooms(rooms);
+    // Se servidor offline, tenta reconectar WS também
+    if(rooms === null && !Engine.Net.connected) Engine.Net.connect();
   };
 
-  /* ── 5. Patch script[0] para exportações incluírem o lobby ─────── */
+  /* ── 7. Patch script[0] para exportações ── */
   function _patchExport(){
-    if(_isExport) return; // jogo exportado não precisa re-patchar
+    if(_isExport) return;
     try{
-      var s0=document.querySelectorAll('script')[0];
-      var original=s0.getAttribute('data-pe-orig');
-      if(!original){ original=s0.textContent; s0.setAttribute('data-pe-orig','1'); }
-      else{ /* já temos o original salvo; usa textContent acumulado */ }
-      // Bake URLs + toda a lógica de lobby no export
-      var ws=window.PIXEL_SERVER, hp=window.PIXEL_HTTP;
-      var lobby=document.querySelectorAll('script')[1].textContent;
-      var baked='window._PE_SERVER_BAKED="'+ws+'";window._PE_HTTP_BAKED="'+hp+'";';
-      s0.textContent=(original==='1'?s0.textContent:original)+'\n'+baked+'\n'+lobby;
-    }catch(e){}
+      var s0 = document.querySelectorAll('script')[0];
+      // Salva conteúdo original uma vez só
+      if(!window._pe_orig_src){
+        window._pe_orig_src = s0.textContent;
+      }
+      var ws = window.PIXEL_SERVER, hp = window.PIXEL_HTTP;
+      var baked = '\nwindow._PE_SERVER_BAKED="'+ws+'";\nwindow._PE_HTTP_BAKED="'+hp+'";\n';
+      var lobbyCode = document.querySelectorAll('script')[1].textContent;
+      s0.textContent = window._pe_orig_src + baked + lobbyCode;
+      console.log('[PixelNet] Export patch: URL embutida =', ws);
+    }catch(e){ console.warn('[PixelNet] _patchExport falhou:', e); }
   }
   _patchExport();
 
-  console.log('[PixelEngine] Lobby carregado. Servidor:', window.PIXEL_SERVER);
+  console.log('[PixelNet] ✅ Lobby v2 carregado. Use: window.openLobby({ onJoin: function(sala,nome){ network.join(sala,nome); } })');
 })();
 
 </script>
+
 
 
 
