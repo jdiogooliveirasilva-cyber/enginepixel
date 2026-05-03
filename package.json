@@ -1,0 +1,13 @@
+{
+  "name": "pixelengine-server",
+  "version": "1.0.0",
+  "description": "PixelEngine2D — servidor multiplayer online",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "ws": "^8.18.1"
+  }
+}
